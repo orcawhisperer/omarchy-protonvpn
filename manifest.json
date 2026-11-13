@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.orcawhisperer.protonvpn",
+  "name": "Proton VPN",
+  "version": "1.0.0",
+  "author": "orcawhisperer",
+  "license": "MIT",
+  "description": "Unofficial Proton VPN widget: status, quick connects, country search, and settings in the Omarchy bar, driven by the official protonvpn CLI.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Proton VPN",
+    "description": "Connect, disconnect, pick a country or a Secure Core, P2P or Tor server, and change NetShield, kill switch and other settings.",
+    "category": "Network",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "refreshIntervalSec": 60,
+      "showCountryCode": true
+    },
+    "schema": [
+      {
+        "key": "refreshIntervalSec",
+        "type": "integer",
+        "label": "Status poll interval (seconds)",
+        "min": 10,
+        "max": 3600,
+        "step": 10,
+        "defaultValue": 60
+      },
+      {
+        "key": "showCountryCode",
+        "type": "boolean",
+        "label": "Show the country code beside the icon when connected",
+        "defaultValue": true
+      }
+    ]
+  }
+}

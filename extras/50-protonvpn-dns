@@ -1,0 +1,46 @@
+#!/bin/bash
+# Hand DNS to Proton VPN while its tunnel is up.
+#
+# Omarchy's DNS setting (omarchy dns Cloudflare) writes a NetworkManager
+# global-dns block, which overrides the DNS of every connection, the VPN's
+# included. Proton's tunnel then comes up without its own resolver, so
+# NetShield can't filter and Cloudflare sees every lookup. This puts Proton's
+# resolver on the tunnel link with the catch-all routing domain "~.", which
+# makes systemd-resolved send every query there and nowhere else. More
+# specific domains, such as Tailscale's, still go to their own links. When the
+# tunnel goes down its link disappears, and DNS falls back to Cloudflare on
+# its own. Omarchy's own files are left untouched.
+
+iface=$1
+action=$2
+
+case $iface in
+  proton*) ;;
+  *) exit 0 ;;
+esac
+
+case $action in
+  up | dns-change | connectivity-change) ;;
+  *) exit 0 ;;
+esac
+
+[[ -d /sys/class/net/$iface ]] || exit 0
+
+# Read the resolver addresses Proton put on the connection, instead of
+# hard-coding them, so a change on Proton's side keeps working.
+uuid=${CONNECTION_UUID:-$(nmcli -g GENERAL.CONNECTION device show "$iface" 2>/dev/null | xargs -r -I{} nmcli -g connection.uuid connection show {})}
+[[ -n $uuid ]] || exit 0
+
+mapfile -t servers < <(
+  nmcli -g ipv4.dns,ipv6.dns connection show "$uuid" 2>/dev/null |
+    tr ',' '\n' | sed 's/\\//g' | grep -v '^$'
+)
+(( ${#servers[@]} )) || servers=(10.2.0.1)
+
+resolvectl dns "$iface" "${servers[@]}"
+resolvectl domain "$iface" '~.'
+resolvectl default-route "$iface" yes
+# Proton's resolver sits inside the tunnel and speaks plain DNS, which is
+# already encrypted by WireGuard, so don't wait on a TLS handshake it won't do.
+resolvectl dnsovertls "$iface" no
+resolvectl flush-caches
