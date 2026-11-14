@@ -149,6 +149,33 @@ test("setting args are built from a fixed table", () => {
   assert.strictEqual(M.settingArgs("netshield", "off --x"), null)
 })
 
+test("cities: table with an outdated-list notice", () => {
+  const raw = "Server list is outdated, updating... This may take a moment.\n\nCities in United States:\nCity            Features\n--------------  ----------\nNew York        P2P, Tor\nAshburn         P2P\nZurich\n"
+  assert.deepStrictEqual(M.parseCities(raw), [
+    { name: "Ashburn", features: ["P2P"] },
+    { name: "New York", features: ["P2P", "Tor"] },
+    { name: "Zurich", features: [] }
+  ])
+})
+
+test("cities: hostile rows and unknown features are dropped", () => {
+  const raw = "City  Features\n----  --------\n-rf  P2P\n<img src=x>  P2P\nSão Paulo  P2P, Evil, Streaming\na;b  Tor\n"
+  assert.deepStrictEqual(M.parseCities(raw), [{ name: "São Paulo", features: ["P2P", "Streaming"] }])
+})
+
+test("cities: nothing before the table counts", () => {
+  assert.deepStrictEqual(M.parseCities("Error: something\nMumbai  P2P\n"), [])
+})
+
+test("city connect and list args are validated", () => {
+  assert.deepStrictEqual(M.connectArgs("city", "New York"), ["protonvpn", "connect", "--city", "New York"])
+  assert.strictEqual(M.connectArgs("city", "--securecore"), null)
+  assert.strictEqual(M.connectArgs("city", "x".repeat(65)), null)
+  assert.deepStrictEqual(M.citiesArgs("US"), ["protonvpn", "cities", "list", "US"])
+  assert.strictEqual(M.citiesArgs("us"), null)
+  assert.strictEqual(M.citiesArgs("US; rm"), null)
+})
+
 // Every QML Text in the plugin renders as plain text, so CLI output that
 // looks like markup is never interpreted.
 test("every Text is PlainText", () => {

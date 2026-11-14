@@ -9,10 +9,11 @@ An unofficial Omarchy bar widget for [Proton VPN](https://protonvpn.com), built 
 - A shield in the bar: solid with a check when connected, hollow when not, breathing while it connects. It can show the country code beside it.
 - Left-click opens a panel with the server, location, load, protocol and IP address.
 - Quick connects: Fastest, Secure Core, P2P, Tor and Random.
-- A searchable list of every Proton country. Pick one to connect to its fastest server.
+- A searchable list of every Proton country. Pick one to connect to its fastest server, or open it to choose a city, with each city's P2P and Tor support shown.
 - Settings for NetShield, kill switch, port forwarding, VPN Accelerator, Moderate NAT and IPv6.
 - Right-click toggles the VPN: fastest server, or disconnect.
-- Follows the Omarchy theme. Updates when the tunnel goes up or down, without polling the CLI constantly.
+- Optional notifications when a connect or disconnect started from the widget finishes or fails.
+- Follows the Omarchy theme. The bar follows NetworkManager. `protonvpn status` only runs after the tunnel changes, after an action, and on a slow timer while the panel is open. The CLI reads your session from the keyring on every run, and polling it constantly has been reported to crash gnome-keyring.
 - Errors from the CLI show in the panel instead of being hidden.
 
 ## Requirements
@@ -48,8 +49,11 @@ omarchy bar move io.github.orcawhisperer.protonvpn --section right
 |---|---|---|
 | Bar | Left-click | Open the panel |
 | Bar | Right-click | Connect to the fastest server, or disconnect |
+| Bar | Middle-click | Refresh |
 | Panel | `j` / `k` or arrows | Move the cursor |
 | Panel | `Enter` / `Space` | Activate the selected item |
+| Panel | `l` / `→` on a country | Show its cities |
+| Panel | `h` / `←` in a country | Hide its cities |
 | Panel | `/` | Search countries |
 | Panel | `t` | Connect or disconnect |
 | Panel | `c` | Copy the IP address |
@@ -62,7 +66,7 @@ To toggle from a keybinding, add this to `~/.config/hypr/bindings.lua`:
 o.bind("SUPER + ALT + V", "Toggle Proton VPN", "omarchy-shell io.github.orcawhisperer.protonvpn toggleVpn")
 ```
 
-The widget also answers `open`, `close`, `connect`, `connectCountry <CC>`, `disconnect`, `refresh` and `status` through `omarchy-shell io.github.orcawhisperer.protonvpn <method>`.
+The widget also answers `open`, `close`, `connect`, `connectCountry <CC>`, `showCities <CC>`, `disconnect`, `refresh` and `status` through `omarchy-shell io.github.orcawhisperer.protonvpn <method>`.
 
 ## Omarchy DNS and NetShield
 
@@ -86,7 +90,8 @@ The hook is optional and never installed automatically.
 
 These come from Proton's CLI (version 1.0.5):
 
-- **Protocol:** WireGuard only. Stealth, OpenVPN and split tunneling are in Proton's GTK app, and the CLI can't run alongside that app.
+- **Protocol:** WireGuard only. Stealth and OpenVPN are in Proton's GTK app, and the CLI can't run alongside that app.
+- **Split tunneling:** not offered. The CLI has no command for it, and Proton's own code only applies split tunneling when the kill switch is off.
 - **Kill switch:** only Off and Standard; the CLI has no Advanced mode. It can only be changed while disconnected.
 - **Settings that need a reconnect:** changes to IPv6 and custom DNS apply on the next connect.
 - **Public IP:** shown after a connect made from the widget. Otherwise the panel shows the server's address.

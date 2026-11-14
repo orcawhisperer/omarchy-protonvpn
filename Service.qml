@@ -6,11 +6,13 @@ import "Model.js" as Model
 
 // State and commands for the Proton VPN widget.
 //
-// The CLI is a Python program (~0.7 s per call), so it is asked as little as
-// possible: NetworkManager events (`nmcli monitor`) and a cheap `nmcli`
-// probe drive the bar between polls, and `protonvpn status` runs on a slow
-// timer, after tunnel events, and when the panel opens. Settings and the
-// country list are only read for the panel.
+// The CLI is a Python program (~0.7 s per call) that reads the session from
+// the Secret Service on every run, and polling it forever has been reported
+// to crash gnome-keyring. So it is asked as little as possible: NetworkManager
+// events (`nmcli monitor`) and a cheap `nmcli` probe drive the bar, and
+// `protonvpn status` runs only after tunnel events, after an action, and on a
+// slow timer while the panel is open. Settings, countries and cities are only
+// read for the panel.
 Item {
   id: root
 
@@ -40,14 +42,19 @@ Item {
   property bool countriesLoaded: false
   property double _countriesAt: 0
 
+  // Cities per country code, loaded when a country is expanded:
+  // { "US": { list: [{ name, features }], at: ms } }
+  property var cities: ({})
+  property string citiesLoading: ""   // country code being fetched
+  property string citiesError: ""
+  property string _citiesFor: ""
+
   // One user-initiated command at a time.
-  property string actionKind: ""     // connect | disconnect | setting | toggle
+  property string actionKind: ""     // connect | disconnect | setting
   property string actionTarget: ""   // fastest, country:JP, setting:netshield, …
   property string actionStatus: ""   // last success message, fades out
   property string lastError: ""      // last failure, kept until the next action
   property string _pendingTargetLabel: ""
-  // Which way a right-click toggle is heading, fixed when it starts: the
-  // tunnel probe flips `connected` halfway through.
 
   readonly property bool connecting: (actionKind === "connect") || (actionKind === "" && nmState === "connecting")
   readonly property bool disconnecting: (actionKind === "disconnect") || (actionKind === "" && nmState === "disconnecting")
@@ -69,6 +76,8 @@ Item {
     if (location !== "") parts.push(location)
     return parts.join(" · ")
   }
+
+  readonly property bool notificationsEnabled: setting("notifications", true) === true
 
   property bool panelOpen: false
   onPanelOpenChanged: if (panelOpen) refreshAll()
@@ -127,6 +136,36 @@ Item {
     if (!installed || countriesProcess.running) return
     countriesProcess.running = true
     armWatchdog()
+  }
+
+  function loadCities(code) {
+    var args = Model.citiesArgs(code)
+    if (!installed || !args) return
+    var cached = cities[code]
+    if (cached && Date.now() - cached.at < 6 * 3600 * 1000) return
+    if (citiesProcess.running) return
+    citiesError = ""
+    citiesLoading = code
+    _citiesFor = code
+    citiesProcess.command = args
+    citiesProcess.running = true
+    armWatchdog()
+  }
+
+  function applyCities(code, exitCode, stdout, stderr) {
+    citiesLoading = ""
+    if (exitCode !== 0) {
+      citiesError = Model.cliError(stdout, stderr, t("error.citiesFailed", "Couldn't load cities"))
+      return
+    }
+    var next = Object.assign({}, cities)
+    next[code] = { list: Model.parseCities(stdout), at: Date.now() }
+    cities = next
+  }
+
+  function citiesOf(code) {
+    var entry = cities[code]
+    return entry ? entry.list : []
   }
 
   function armWatchdog() {
@@ -215,6 +254,19 @@ Item {
     statusDebounce.restart()
   }
 
+  // ---- notifications --------------------------------------------------
+
+  // Only for actions started from the widget: a tunnel change made elsewhere
+  // (the protonvpn CLI, a keybinding script) already speaks for itself, and
+  // a second toast for it would be noise.
+  function notify(summary, body, critical) {
+    if (!notificationsEnabled) return
+    var args = ["notify-send", "-a", "Proton VPN", "-i", "network-vpn"]
+    if (critical) args.push("-u", "critical")
+    args.push("--", Model.cleanText(summary, 120), Model.cleanText(body, 300))
+    Quickshell.execDetached(args)
+  }
+
   // ---- commands -------------------------------------------------------
 
   function canAct() {
@@ -238,7 +290,8 @@ Item {
     var args = Model.connectArgs(kind, value)
     if (!args) return
     _pendingTargetLabel = String(label || "")
-    startAction("connect", kind === "country" ? "country:" + value : kind, args)
+    var target = kind === "country" ? "country:" + value : (kind === "city" ? "city:" + value : kind)
+    startAction("connect", target, args)
   }
 
   function connectFastest() { connectTo("fastest", "", "") }
@@ -282,9 +335,13 @@ Item {
         }
         if (out.ip !== "") publicIp = out.ip
         if (out.server !== "" && out.ip !== "") rememberConnection(out.server, out.ip)
+        var where = [out.server, out.location].filter(function(p) { return p !== "" }).join(" · ")
+        notify(t("notify.connected", "Proton VPN connected"),
+               out.ip !== "" ? t("notify.connectedBody", "%1 · IP %2").arg(where).arg(out.ip) : where)
       } else if (kind === "disconnect") {
         connected = false
         clearConnection()
+        notify(t("notify.disconnected", "Proton VPN disconnected"), t("notify.disconnectedBody", "Your traffic is no longer protected."))
       } else if (kind === "setting") {
         actionStatus = Model.firstLine(stdout)
         actionStatusTimer.restart()
@@ -294,6 +351,7 @@ Item {
         : (kind === "disconnect" ? t("error.disconnectFailed", "Couldn't disconnect")
           : t("error.settingFailed", "Couldn't change the setting"))
       lastError = Model.cliError(stdout, stderr, fallback)
+      if (kind === "connect" || kind === "disconnect") notify(fallback, lastError, true)
     }
     actionKind = ""
     actionTarget = ""
@@ -310,7 +368,12 @@ Item {
     repeat: true
     running: true
     triggeredOnStart: true
-    onTriggered: root.refresh()
+    // With the panel closed the bar only needs the tunnel, which nmcli
+    // answers without touching the keyring.
+    onTriggered: {
+      if (root.panelOpen || !root.installed || !root.statusKnown) root.refresh()
+      else root.probeTunnel()
+    }
   }
 
   Timer {
@@ -342,6 +405,7 @@ Item {
       if (statusProcess.running) statusProcess.running = false
       if (configProcess.running) configProcess.running = false
       if (countriesProcess.running) countriesProcess.running = false
+      if (citiesProcess.running) { citiesProcess.running = false; root.citiesLoading = "" }
       if (nmProcess.running) nmProcess.running = false
       if (endpointProcess.running) endpointProcess.running = false
     }
@@ -449,6 +513,13 @@ Item {
         root.lastError = Model.cliError(configOut.text, configErr.text, root.t("error.configFailed", "protonvpn config list failed"))
       }
     }
+  }
+
+  Process {
+    id: citiesProcess
+    stdout: StdioCollector { id: citiesOut; waitForEnd: true }
+    stderr: StdioCollector { id: citiesErr; waitForEnd: true }
+    onExited: function(exitCode) { root.applyCities(root._citiesFor, exitCode, citiesOut.text, citiesErr.text) }
   }
 
   Process {

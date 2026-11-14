@@ -6,6 +6,7 @@
 
 var MAX_INPUT = 65536
 var MAX_COUNTRIES = 300
+var MAX_CITIES = 200
 
 // Settings the panel can change, with the values `protonvpn config set`
 // accepts for each. The CLI (1.0.5) only offers off/standard for the kill
@@ -141,9 +142,51 @@ function parseCountries(raw) {
   return result
 }
 
+// A city name as the CLI prints it, safe to hand back as one argv entry.
+// Argv never reaches a shell, so this only has to keep out control
+// characters, markup-ish punctuation, and a leading dash the CLI would read
+// as an option.
+function isCityName(value) {
+  var s = String(value || "")
+  if (s.length === 0 || s.length > 64) return false
+  if (/^[\s-]/.test(s) || /\s$/.test(s)) return false
+  return !/[\u0000-\u001f\u007f<>&"`$\\;|]/.test(s)
+}
+
+var CITY_FEATURES = ["P2P", "Tor", "Secure Core", "Streaming"]
+
+// `protonvpn cities list CC` prints an optional "Server list is outdated"
+// line, a title, then a two-column table: City, Features.
+function parseCities(raw) {
+  var seen = {}
+  var result = []
+  var all = lines(raw)
+  var started = false
+  for (var i = 0; i < all.length && result.length < MAX_CITIES; i++) {
+    var line = all[i]
+    if (/^\s*-{3,}(\s+-{3,})?\s*$/.test(line)) { started = true; continue }
+    if (!started) continue
+    var match = line.match(/^\s*(\S.*?)(?:\s{2,}(\S.*?))?\s*$/)
+    if (!match) continue
+    var name = cleanText(match[1], 64)
+    if (!isCityName(name) || seen[name]) continue
+    var features = []
+    String(match[2] || "").split(",").forEach(function(f) {
+      var feature = f.trim()
+      if (CITY_FEATURES.indexOf(feature) !== -1 && features.indexOf(feature) === -1) features.push(feature)
+    })
+    seen[name] = true
+    result.push({ name: name, features: features })
+  }
+  result.sort(function(a, b) { return a.name.localeCompare(b.name) })
+  return result
+}
+
 // A country code as its flag: two regional indicator symbols.
 function flag(code) {
   if (!isCountryCode(code)) return ""
+  // Proton says UK where ISO 3166 (and so the flag) says GB.
+  if (code === "UK") code = "GB"
   return String.fromCodePoint(0x1f1e6 + code.charCodeAt(0) - 65, 0x1f1e6 + code.charCodeAt(1) - 65)
 }
 
@@ -325,7 +368,12 @@ function connectArgs(kind, value) {
   if (kind === "tor") return ["protonvpn", "connect", "--tor"]
   if (kind === "random") return ["protonvpn", "connect", "--random"]
   if (kind === "country" && isCountryCode(value)) return ["protonvpn", "connect", "--country", value]
+  if (kind === "city" && isCityName(value)) return ["protonvpn", "connect", "--city", value]
   return null
+}
+
+function citiesArgs(code) {
+  return isCountryCode(code) ? ["protonvpn", "cities", "list", code] : null
 }
 
 function settingArgs(name, value) {
@@ -346,6 +394,9 @@ if (typeof module !== "undefined") {
     parseConfig: parseConfig,
     hasConfig: hasConfig,
     parseCountries: parseCountries,
+    isCityName: isCityName,
+    parseCities: parseCities,
+    citiesArgs: citiesArgs,
     flag: flag,
     filterCountries: filterCountries,
     splitTerse: splitTerse,

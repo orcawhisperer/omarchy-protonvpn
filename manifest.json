@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.orcawhisperer.protonvpn",
   "name": "Proton VPN",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "orcawhisperer",
   "license": "MIT",
   "description": "Unofficial Proton VPN widget: status, quick connects, country search, and settings in the Omarchy bar, driven by the official protonvpn CLI.",
@@ -20,13 +20,14 @@
     "defaultSection": "right",
     "defaults": {
       "refreshIntervalSec": 60,
-      "showCountryCode": true
+      "showCountryCode": true,
+      "notifications": true
     },
     "schema": [
       {
         "key": "refreshIntervalSec",
         "type": "integer",
-        "label": "Status poll interval (seconds)",
+        "label": "Status refresh interval while the panel is open (seconds)",
         "min": 10,
         "max": 3600,
         "step": 10,
@@ -36,6 +37,12 @@
         "key": "showCountryCode",
         "type": "boolean",
         "label": "Show the country code beside the icon when connected",
+        "defaultValue": true
+      },
+      {
+        "key": "notifications",
+        "type": "boolean",
+        "label": "Notify when a connect or disconnect from the widget finishes or fails",
         "defaultValue": true
       }
     ]

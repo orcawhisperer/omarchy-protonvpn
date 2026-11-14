@@ -92,5 +92,17 @@
   "settings.summaryNetshield": "NetShield: %1",
   "settings.summaryKillSwitch": "Kill switch: %1",
   "settings.summaryAccelerator": "Accelerator",
-  "detail.serverIp": "Server IP"
+  "detail.serverIp": "Server IP",
+  "cities.loading": "Loading cities…",
+  "cities.none": "No cities listed",
+  "cities.show": "Show cities in %1",
+  "cities.hide": "Hide cities",
+  "cities.connect": "Connect to the fastest server in %1",
+  "cities.connecting": "%1…",
+  "cities.label": "%1, %2",
+  "error.citiesFailed": "Couldn't load cities",
+  "notify.connected": "Proton VPN connected",
+  "notify.connectedBody": "%1 · IP %2",
+  "notify.disconnected": "Proton VPN disconnected",
+  "notify.disconnectedBody": "Your traffic is no longer protected."
 }

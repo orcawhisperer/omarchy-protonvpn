@@ -44,6 +44,28 @@ Panel {
 
   readonly property var quickKinds: Model.QUICK_CONNECTS
   readonly property var filteredCountries: Model.filterCountries(vpn.countries, countryQuery)
+  // One country at a time opens to show its cities, loaded on demand.
+  property string expandedCountry: ""
+  // The country list as the ListView shows it: every matching country, with
+  // the expanded one followed by its cities (or a single status row while
+  // they load). `countryIndex` indexes this list.
+  readonly property var listRows: {
+    var rows = []
+    for (var i = 0; i < filteredCountries.length; i++) {
+      var country = filteredCountries[i]
+      rows.push({ type: "country", country: country })
+      if (country.code !== expandedCountry) continue
+      var cities = vpn.citiesOf(country.code)
+      if (cities.length > 0) {
+        for (var j = 0; j < cities.length; j++) rows.push({ type: "city", country: country, city: cities[j] })
+      } else {
+        var note = vpn.citiesLoading === country.code ? strings.t("cities.loading")
+          : (vpn.citiesError !== "" ? vpn.citiesError : strings.t("cities.none"))
+        rows.push({ type: "note", country: country, text: note })
+      }
+    }
+    return rows
+  }
 
   // The settings, in panel order. Choice rows carry their options; the
   // rest are on/off switches.
@@ -174,7 +196,7 @@ Panel {
     if (vpn.installed) list.push("quick")
     if (vpn.installed) list.push("settingsHeader")
     if (showSettings) list.push("settings")
-    if (vpn.installed && filteredCountries.length > 0) list.push("countries")
+    if (vpn.installed && listRows.length > 0) list.push("countries")
     return list
   }
 
@@ -183,7 +205,7 @@ Panel {
     if (list.indexOf(focusSection) === -1) focusSection = list[list.length - 1]
     quickIndex = Math.max(0, Math.min(quickIndex, quickKinds.length - 1))
     settingIndex = Math.max(0, Math.min(settingIndex, settingRows.length - 1))
-    countryIndex = Math.max(0, Math.min(countryIndex, Math.max(0, filteredCountries.length - 1)))
+    countryIndex = Math.max(0, Math.min(countryIndex, Math.max(0, listRows.length - 1)))
     var row = settingRows[settingIndex]
     if (row && row.kind === "choice") chipIndex = Math.max(0, Math.min(chipIndex, row.options.length - 1))
   }
@@ -205,6 +227,10 @@ Panel {
     var at = list.indexOf(focusSection)
     if (dx !== 0) {
       if (focusSection === "quick") quickIndex = Math.max(0, Math.min(quickKinds.length - 1, quickIndex + dx))
+      else if (focusSection === "countries") {
+        if (dx > 0) expandAt(countryIndex)
+        else collapseAt(countryIndex)
+      }
       else if (focusSection === "settings") {
         var row = settingRows[settingIndex]
         if (row.kind === "choice") chipIndex = Math.max(0, Math.min(row.options.length - 1, chipIndex + dx))
@@ -212,7 +238,7 @@ Panel {
     }
     if (dy > 0) {
       if (focusSection === "settings" && settingIndex < settingRows.length - 1) enterSettingRow(settingIndex + 1)
-      else if (focusSection === "countries") { if (countryIndex < filteredCountries.length - 1) countryIndex++ }
+      else if (focusSection === "countries") { if (countryIndex < listRows.length - 1) countryIndex++ }
       else if (at < list.length - 1) {
         focusSection = list[at + 1]
         if (focusSection === "settings") enterSettingRow(0)
@@ -236,7 +262,7 @@ Panel {
     else if (focusSection === "quick") quickConnect(quickKinds[quickIndex])
     else if (focusSection === "settingsHeader") toggleSettings()
     else if (focusSection === "settings") activateSetting(settingIndex, chipIndex)
-    else if (focusSection === "countries") connectCountry(filteredCountries[countryIndex])
+    else if (focusSection === "countries") activateRow(listRows[countryIndex])
   }
 
   function quickConnect(kind) {
@@ -246,6 +272,59 @@ Panel {
   function connectCountry(country) {
     if (!country) return
     vpn.connectTo("country", country.code, country.name)
+  }
+
+  function connectCity(country, city) {
+    if (!country || !city) return
+    vpn.connectTo("city", city.name, strings.t("cities.label").arg(city.name).arg(country.name))
+  }
+
+  function activateRow(row) {
+    if (!row || vpn.busy) return
+    if (row.type === "country") connectCountry(row.country)
+    else if (row.type === "city") connectCity(row.country, row.city)
+  }
+
+  function toggleCountry(code) {
+    if (expandedCountry === code) { expandedCountry = ""; return }
+    expandedCountry = code
+    vpn.loadCities(code)
+    revealCountry(code)
+  }
+
+  // Put an opened country at the top of the list so its cities show below
+  // it, rather than leaving it at the bottom edge with them out of sight.
+  function revealCountry(code) {
+    Qt.callLater(function() {
+      if (!countryList) return
+      for (var i = 0; i < listRows.length; i++) {
+        if (listRows[i].type === "country" && listRows[i].country.code === code) {
+          countryList.positionViewAtIndex(i, ListView.Beginning)
+          scrollItemIntoView(countryList)
+          return
+        }
+      }
+    })
+  }
+
+  // Right on a country opens it; Left anywhere inside an open country
+  // closes it and puts the cursor back on the country.
+  function expandAt(index) {
+    var row = listRows[index]
+    if (!row || row.type !== "country" || expandedCountry === row.country.code) return
+    expandedCountry = row.country.code
+    vpn.loadCities(row.country.code)
+    revealCountry(row.country.code)
+  }
+
+  function collapseAt(index) {
+    var row = listRows[index]
+    if (!row || expandedCountry === "" || row.country.code !== expandedCountry) return
+    var code = expandedCountry
+    expandedCountry = ""
+    for (var i = 0; i < listRows.length; i++) {
+      if (listRows[i].type === "country" && listRows[i].country.code === code) { countryIndex = i; break }
+    }
   }
 
   function activateSetting(index, chip) {
@@ -297,7 +376,7 @@ Panel {
     else if (focusSection === "quick") scrollItemIntoView(quickRow)
     else if (focusSection === "settingsHeader" && panel.loadedContent) scrollItemIntoView(panel.loadedContent.settingsHeaderRow)
     else if (focusSection === "settings" && settingsColumn && settingIndex < settingsColumn.children.length) scrollItemIntoView(settingsColumn.children[settingIndex])
-    else if (focusSection === "countries" && countryList && filteredCountries.length > 0) {
+    else if (focusSection === "countries" && countryList && listRows.length > 0) {
       countryList.positionViewAtIndex(countryIndex, ListView.Contain)
       scrollItemIntoView(countryList)
     }
@@ -311,12 +390,20 @@ Panel {
     focusSection = "header"
     if (panelFlick) panelFlick.contentY = 0
     Qt.callLater(function() { if (panel.loadedContent) panel.loadedContent.forceActiveFocus() })
-  } else if (countrySearch && countrySearch.text !== "") {
+  } else {
+    expandedCountry = ""
     // A filter must not survive the panel: reopening to a short list
     // looks like countries are missing.
-    countrySearch.text = ""
+    if (countrySearch && countrySearch.text !== "") countrySearch.text = ""
   }
   onFilteredCountriesChanged: ensureCursor()
+  // A new rows array resets the ListView to the top; keep an open country,
+  // or the cursor, where the user was looking.
+  onListRowsChanged: {
+    ensureCursor()
+    if (expandedCountry !== "") revealCountry(expandedCountry)
+    else if (cursorActive && focusSection === "countries") scrollCursorIntoView()
+  }
   onShowSettingsChanged: ensureCursor()
 
   Service {
@@ -345,6 +432,23 @@ Panel {
       var value = String(code || "").toUpperCase()
       if (!Model.isCountryCode(value)) return "invalid country code"
       vpn.connectTo("country", value, root.countryName(value))
+      return "ok"
+    }
+    function showCities(code: string): string {
+      var value = String(code || "").toUpperCase()
+      if (!Model.isCountryCode(value)) return "invalid country code"
+      if (!root.opened) root.open()
+      root.expandedCountry = value
+      vpn.loadCities(value)
+      root.revealCountry(value)
+      for (var i = 0; i < root.listRows.length; i++) {
+        if (root.listRows[i].type === "country" && root.listRows[i].country.code === value) {
+          root.cursorActive = true
+          root.focusSection = "countries"
+          root.countryIndex = i
+          break
+        }
+      }
       return "ok"
     }
     function disconnect(): string { vpn.disconnect(); return "ok" }
@@ -682,6 +786,7 @@ Panel {
               placeholderText: strings.t("countries.search")
               onTextChanged: {
                 root.countryQuery = text.length > 64 ? text.substring(0, 64) : text
+                root.expandedCountry = ""
                 root.countryIndex = 0
                 countryList.positionViewAtBeginning()
               }
@@ -689,15 +794,15 @@ Panel {
               // Enter connects to the highlighted match, so "/ jap ⏎" is a
               // complete gesture.
               onAccepted: {
-                if (root.filteredCountries.length === 0) return
-                root.connectCountry(root.filteredCountries[Math.min(root.countryIndex, root.filteredCountries.length - 1)])
+                if (root.listRows.length === 0) return
+                root.activateRow(root.listRows[Math.min(root.countryIndex, root.listRows.length - 1)])
                 keyCatcher.forceActiveFocus()
               }
               Keys.onPressed: function(event) {
                 if (event.key === Qt.Key_Down) {
                   root.cursorActive = true
                   root.focusSection = "countries"
-                  if (root.countryIndex < root.filteredCountries.length - 1) root.countryIndex++
+                  if (root.countryIndex < root.listRows.length - 1) root.countryIndex++
                   root.scrollCursorIntoView()
                   event.accepted = true
                 } else if (event.key === Qt.Key_Up) {
@@ -736,24 +841,58 @@ Panel {
 
             ListView {
               id: countryList
-              visible: root.filteredCountries.length > 0
+              visible: root.listRows.length > 0
               width: parent.width
               height: Math.min(contentHeight, Style.space(250))
               clip: true
               spacing: Style.space(2)
-              model: root.filteredCountries
+              model: root.listRows
               reuseItems: true
               boundsBehavior: Flickable.StopAtBounds
               flickableDirection: Flickable.VerticalFlick
               interactive: contentHeight > height
               ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
-              delegate: CountryRow {
+              delegate: Item {
+                id: listDelegate
                 required property var modelData
                 required property int index
                 width: countryList.width
-                country: modelData
-                rowIndex: index
+                implicitHeight: modelData.type === "country" ? countryDelegate.implicitHeight
+                  : (modelData.type === "city" ? cityDelegate.implicitHeight : noteDelegate.implicitHeight)
+                height: implicitHeight
+
+                CountryRow {
+                  id: countryDelegate
+                  visible: listDelegate.modelData.type === "country"
+                  width: parent.width
+                  country: visible ? listDelegate.modelData.country : null
+                  rowIndex: listDelegate.index
+                }
+
+                CityRow {
+                  id: cityDelegate
+                  visible: listDelegate.modelData.type === "city"
+                  width: parent.width
+                  country: visible ? listDelegate.modelData.country : null
+                  city: visible ? listDelegate.modelData.city : null
+                  rowIndex: listDelegate.index
+                }
+
+                Text {
+                  id: noteDelegate
+                  visible: listDelegate.modelData.type === "note"
+                  textFormat: Text.PlainText
+                  width: parent.width
+                  leftPadding: Style.space(38)
+                  topPadding: Style.space(4)
+                  bottomPadding: Style.space(4)
+                  text: visible ? String(listDelegate.modelData.text || "") : ""
+                  color: root.dim
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.bodySmall
+                  elide: Text.ElideRight
+                }
               }
             }
           }
@@ -1050,6 +1189,7 @@ Panel {
     readonly property string name: country ? String(country.name || "") : ""
     readonly property bool isCurrent: vpn.connected && !vpn.connecting && vpn.countryCode === code
     readonly property bool working: vpn.actionKind === "connect" && vpn.actionTarget === "country:" + code
+    readonly property bool expanded: code !== "" && root.expandedCountry === code
 
     hasCursor: root.cursorActive && root.focusSection === "countries" && root.countryIndex === rowIndex
     current: isCurrent || working
@@ -1104,6 +1244,18 @@ Panel {
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
       }
+
+      Text {
+        id: chevron
+        textFormat: Text.PlainText
+        // nf-md-chevron_down / chevron_right (left in right-to-left layouts).
+        text: countryRow.expanded ? "\u{f0140}" : (Commons.I18n.rightToLeft ? "\u{f0141}" : "\u{f0142}")
+        color: chevronMouse.containsMouse ? root.foreground : root.dim
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.body
+        Layout.preferredWidth: Style.space(20)
+        horizontalAlignment: Text.AlignHCenter
+      }
     }
 
     MouseArea {
@@ -1115,9 +1267,95 @@ Panel {
       onClicked: if (!vpn.busy) root.connectCountry(countryRow.country)
     }
 
+    // Above the row's own MouseArea so the chevron opens the country
+    // instead of connecting to it.
+    MouseArea {
+      id: chevronMouse
+      anchors.right: parent.right
+      anchors.top: parent.top
+      anchors.bottom: parent.bottom
+      width: Style.space(36)
+      hoverEnabled: true
+      cursorShape: Qt.PointingHandCursor
+      onEntered: { root.cursorActive = true; root.focusSection = "countries"; root.countryIndex = countryRow.rowIndex }
+      onClicked: root.toggleCountry(countryRow.code)
+    }
+
     PanelToolTip {
-      visible: countryMouse.containsMouse && !countryRow.isCurrent
+      visible: chevronMouse.containsMouse
+      text: countryRow.expanded ? strings.t("cities.hide") : strings.t("cities.show").arg(countryRow.name)
+      fontFamily: root.fontFamily
+    }
+
+    PanelToolTip {
+      visible: countryMouse.containsMouse && !chevronMouse.containsMouse && !countryRow.isCurrent
       text: strings.t("countries.connect").arg(countryRow.name)
+      fontFamily: root.fontFamily
+    }
+  }
+
+  component CityRow: CursorSurface {
+    id: cityRow
+    property var country: null
+    property var city: null
+    property int rowIndex: 0
+    readonly property string code: country ? String(country.code || "") : ""
+    readonly property string name: city ? String(city.name || "") : ""
+    readonly property string featureText: city && city.features ? city.features.join(" · ") : ""
+    // `protonvpn status` reports the location as "City, Country".
+    readonly property bool isCurrent: vpn.connected && !vpn.connecting && vpn.countryCode === code
+      && name !== "" && vpn.location.indexOf(name + ",") === 0
+    readonly property bool working: vpn.actionKind === "connect" && vpn.actionTarget === "city:" + name
+
+    hasCursor: root.cursorActive && root.focusSection === "countries" && root.countryIndex === rowIndex
+    current: isCurrent || working
+    foreground: root.foreground
+    fill: root.hoverFill
+    currentFill: root.selectedFill
+    implicitHeight: cityInner.implicitHeight + Style.space(8)
+
+    RowLayout {
+      id: cityInner
+      anchors.left: parent.left
+      anchors.right: parent.right
+      anchors.verticalCenter: parent.verticalCenter
+      // Indented under the country's flag column.
+      anchors.leftMargin: Style.space(38)
+      anchors.rightMargin: Style.space(8)
+      spacing: Style.space(10)
+
+      Text {
+        textFormat: Text.PlainText
+        Layout.fillWidth: true
+        text: cityRow.working ? strings.t("cities.connecting").arg(cityRow.name) : cityRow.name
+        color: root.foreground
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.bodySmall
+        font.bold: cityRow.isCurrent
+        elide: Text.ElideRight
+      }
+
+      Text {
+        textFormat: Text.PlainText
+        text: cityRow.isCurrent ? strings.t("countries.current") : cityRow.featureText
+        color: root.dim
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
+      }
+    }
+
+    MouseArea {
+      id: cityMouse
+      anchors.fill: parent
+      hoverEnabled: true
+      cursorShape: vpn.busy ? Qt.ArrowCursor : Qt.PointingHandCursor
+      onEntered: { root.cursorActive = true; root.focusSection = "countries"; root.countryIndex = cityRow.rowIndex }
+      onClicked: root.connectCity(cityRow.country, cityRow.city)
+    }
+
+    PanelToolTip {
+      visible: cityMouse.containsMouse && !cityRow.isCurrent
+      text: strings.t("cities.connect").arg(cityRow.name)
       fontFamily: root.fontFamily
     }
   }
