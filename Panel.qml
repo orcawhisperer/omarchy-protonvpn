@@ -43,7 +43,33 @@ Panel {
   property string countryQuery: ""
 
   readonly property var quickKinds: Model.QUICK_CONNECTS
-  readonly property var filteredCountries: Model.filterCountries(vpn.countries, countryQuery)
+  // Starred countries, kept in this widget's shell.json entry the way the
+  // Tailscale widget keeps its recent Mullvad regions.
+  readonly property var favoriteCountries: Model.favoriteCodes(settings ? settings.favoriteCountries : [])
+  readonly property var filteredCountries: Model.pinFavorites(Model.filterCountries(vpn.countries, countryQuery), favoriteCountries)
+
+  function isFavorite(code) { return favoriteCountries.indexOf(code) !== -1 }
+
+  function toggleFavorite(code) {
+    if (!Model.isCountryCode(code)) return false
+    if (!root.bar || !root.bar.shell || typeof root.bar.shell.updateEntryInline !== "function") {
+      vpn.lastError = strings.t("error.favoritesUnsaved")
+      return false
+    }
+    var entry = { id: root.moduleName }
+    for (var key in settings) if (key !== "id") entry[key] = settings[key]
+    entry.favoriteCountries = Model.toggleFavorite(favoriteCountries, code)
+    root.bar.shell.updateEntryInline(root.moduleName, entry)
+    return true
+  }
+
+  // `f` stars the country under the cursor, or the country a city row
+  // belongs to.
+  function toggleFavoriteAtCursor() {
+    if (focusSection !== "countries") return
+    var row = listRows[countryIndex]
+    if (row && row.country) toggleFavorite(row.country.code)
+  }
   // One country at a time opens to show its cities, loaded on demand.
   property string expandedCountry: ""
   // The country list as the ListView shows it: every matching country, with
@@ -451,6 +477,12 @@ Panel {
       }
       return "ok"
     }
+    function toggleFavorite(code: string): string {
+      var value = String(code || "").toUpperCase()
+      if (!Model.isCountryCode(value)) return "invalid country code"
+      return root.toggleFavorite(value) ? "ok" : "couldn't save"
+    }
+    function favorites(): string { return root.favoriteCountries.join(",") }
     function disconnect(): string { vpn.disconnect(); return "ok" }
     function toggleVpn(): string { vpn.toggleVpn(); return "ok" }
     function status(): string { return vpn.statusText }
@@ -516,6 +548,7 @@ Panel {
         if (t === "t" || t === "T") vpn.toggleVpn()
         else if (t === "r" || t === "R") vpn.refreshAll()
         else if (t === "c" || t === "C") root.copyIp()
+        else if (t === "f" || t === "F") root.toggleFavoriteAtCursor()
         else if (t === "/") root.focusSearch()
       }
 
@@ -1190,6 +1223,7 @@ Panel {
     readonly property bool isCurrent: vpn.connected && !vpn.connecting && vpn.countryCode === code
     readonly property bool working: vpn.actionKind === "connect" && vpn.actionTarget === "country:" + code
     readonly property bool expanded: code !== "" && root.expandedCountry === code
+    readonly property bool favorite: code !== "" && root.isFavorite(code)
 
     hasCursor: root.cursorActive && root.focusSection === "countries" && root.countryIndex === rowIndex
     current: isCurrent || working
@@ -1200,6 +1234,9 @@ Panel {
 
     RowLayout {
       id: countryInner
+      // Above the row-wide MouseArea so the star's own MouseArea gets its
+      // clicks; plain Text lets the rest through to the row.
+      z: 1
       anchors.left: parent.left
       anchors.right: parent.right
       anchors.verticalCenter: parent.verticalCenter
@@ -1235,6 +1272,30 @@ Panel {
         font.pixelSize: Style.font.body
         font.bold: countryRow.isCurrent
         elide: Text.ElideRight
+      }
+
+      Text {
+        id: star
+        textFormat: Text.PlainText
+        // nf-md-star / star_outline. The outline only shows on the row in
+        // focus, so the list stays quiet.
+        text: countryRow.favorite ? "\u{f04ce}" : "\u{f04d2}"
+        opacity: countryRow.favorite || countryRow.hasCursor || starMouse.containsMouse ? 1 : 0
+        color: countryRow.favorite ? Commons.Color.accent : (starMouse.containsMouse ? root.foreground : root.dim)
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.body
+        Layout.preferredWidth: Style.space(20)
+        horizontalAlignment: Text.AlignHCenter
+
+        MouseArea {
+          id: starMouse
+          anchors.fill: parent
+          anchors.margins: -Style.space(4)
+          hoverEnabled: true
+          cursorShape: Qt.PointingHandCursor
+          onEntered: { root.cursorActive = true; root.focusSection = "countries"; root.countryIndex = countryRow.rowIndex }
+          onClicked: root.toggleFavorite(countryRow.code)
+        }
       }
 
       Text {
@@ -1282,13 +1343,19 @@ Panel {
     }
 
     PanelToolTip {
+      visible: starMouse.containsMouse
+      text: countryRow.favorite ? strings.t("favorites.remove").arg(countryRow.name) : strings.t("favorites.add").arg(countryRow.name)
+      fontFamily: root.fontFamily
+    }
+
+    PanelToolTip {
       visible: chevronMouse.containsMouse
       text: countryRow.expanded ? strings.t("cities.hide") : strings.t("cities.show").arg(countryRow.name)
       fontFamily: root.fontFamily
     }
 
     PanelToolTip {
-      visible: countryMouse.containsMouse && !chevronMouse.containsMouse && !countryRow.isCurrent
+      visible: countryMouse.containsMouse && !chevronMouse.containsMouse && !starMouse.containsMouse && !countryRow.isCurrent
       text: strings.t("countries.connect").arg(countryRow.name)
       fontFamily: root.fontFamily
     }

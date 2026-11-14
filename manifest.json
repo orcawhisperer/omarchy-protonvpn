@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.orcawhisperer.protonvpn",
   "name": "Proton VPN",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "author": "orcawhisperer",
   "license": "MIT",
   "description": "Unofficial Proton VPN widget: status, quick connects, country search, and settings in the Omarchy bar, driven by the official protonvpn CLI.",

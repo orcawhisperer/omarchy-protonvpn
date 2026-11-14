@@ -176,6 +176,17 @@ test("city connect and list args are validated", () => {
   assert.strictEqual(M.citiesArgs("US; rm"), null)
 })
 
+test("favourites: cleaned, toggled and pinned", () => {
+  assert.deepStrictEqual(M.favoriteCodes(["ch", "CH", "xx1", 7, "NL"]), ["CH", "NL"])
+  assert.deepStrictEqual(M.favoriteCodes("CH,NL"), [])
+  assert.deepStrictEqual(M.toggleFavorite(["CH"], "NL"), ["CH", "NL"])
+  assert.deepStrictEqual(M.toggleFavorite(["CH", "NL"], "CH"), ["NL"])
+  assert.deepStrictEqual(M.toggleFavorite(["CH"], "nope"), ["CH"])
+  const countries = [{ code: "AT", name: "Austria" }, { code: "CH", name: "Switzerland" }, { code: "IN", name: "India" }]
+  assert.deepStrictEqual(M.pinFavorites(countries, ["IN", "CH"]).map(c => c.code), ["CH", "IN", "AT"])
+  assert.deepStrictEqual(M.pinFavorites(countries, []).map(c => c.code), ["AT", "CH", "IN"])
+})
+
 // Every QML Text in the plugin renders as plain text, so CLI output that
 // looks like markup is never interpreted.
 test("every Text is PlainText", () => {

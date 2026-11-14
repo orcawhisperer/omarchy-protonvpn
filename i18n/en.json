@@ -104,5 +104,8 @@
   "notify.connected": "Proton VPN connected",
   "notify.connectedBody": "%1 · IP %2",
   "notify.disconnected": "Proton VPN disconnected",
-  "notify.disconnectedBody": "Your traffic is no longer protected."
+  "notify.disconnectedBody": "Your traffic is no longer protected.",
+  "favorites.add": "Pin %1 to the top",
+  "favorites.remove": "Unpin %1",
+  "error.favoritesUnsaved": "Couldn't save favourites"
 }

@@ -206,6 +206,44 @@ function filterCountries(countries, query) {
 }
 
 // nmcli -t escapes ':' and '\' inside fields with a backslash.
+var MAX_FAVORITES = 24
+
+// Favourite country codes from the widget's settings: a list of valid,
+// distinct codes, whatever shape the stored value has.
+function favoriteCodes(value) {
+  var list = Array.isArray(value) ? value : []
+  var result = []
+  for (var i = 0; i < list.length && result.length < MAX_FAVORITES; i++) {
+    var code = String(list[i] || "").toUpperCase()
+    if (isCountryCode(code) && result.indexOf(code) === -1) result.push(code)
+  }
+  return result
+}
+
+function toggleFavorite(favorites, code) {
+  var list = favoriteCodes(favorites)
+  if (!isCountryCode(code)) return list
+  var at = list.indexOf(code)
+  if (at !== -1) list.splice(at, 1)
+  else if (list.length < MAX_FAVORITES) list.push(code)
+  return list
+}
+
+// Favourites first, each group keeping the order it came in (alphabetical,
+// or best match first while searching).
+function pinFavorites(countries, favorites) {
+  var list = Array.isArray(countries) ? countries : []
+  var favs = favoriteCodes(favorites)
+  if (favs.length === 0) return list
+  var pinned = []
+  var rest = []
+  for (var i = 0; i < list.length; i++) {
+    if (favs.indexOf(list[i].code) !== -1) pinned.push(list[i])
+    else rest.push(list[i])
+  }
+  return pinned.concat(rest)
+}
+
 function splitTerse(line) {
   var fields = []
   var current = ""
@@ -394,6 +432,9 @@ if (typeof module !== "undefined") {
     parseConfig: parseConfig,
     hasConfig: hasConfig,
     parseCountries: parseCountries,
+    favoriteCodes: favoriteCodes,
+    toggleFavorite: toggleFavorite,
+    pinFavorites: pinFavorites,
     isCityName: isCityName,
     parseCities: parseCities,
     citiesArgs: citiesArgs,

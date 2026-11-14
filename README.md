@@ -9,7 +9,7 @@ An unofficial Omarchy bar widget for [Proton VPN](https://protonvpn.com), built 
 - A shield in the bar: solid with a check when connected, hollow when not, breathing while it connects. It can show the country code beside it.
 - Left-click opens a panel with the server, location, load, protocol and IP address.
 - Quick connects: Fastest, Secure Core, P2P, Tor and Random.
-- A searchable list of every Proton country. Pick one to connect to its fastest server, or open it to choose a city, with each city's P2P and Tor support shown.
+- A searchable list of every Proton country. Pick one to connect to its fastest server, or open it to choose a city, with each city's P2P and Tor support shown. Star the countries you use to keep them at the top.
 - Settings for NetShield, kill switch, port forwarding, VPN Accelerator, Moderate NAT and IPv6.
 - Right-click toggles the VPN: fastest server, or disconnect.
 - Optional notifications when a connect or disconnect started from the widget finishes or fails.
@@ -54,6 +54,7 @@ omarchy bar move io.github.orcawhisperer.protonvpn --section right
 | Panel | `Enter` / `Space` | Activate the selected item |
 | Panel | `l` / `→` on a country | Show its cities |
 | Panel | `h` / `←` in a country | Hide its cities |
+| Panel | `f` on a country, or click its star | Pin it to the top, or unpin it |
 | Panel | `/` | Search countries |
 | Panel | `t` | Connect or disconnect |
 | Panel | `c` | Copy the IP address |
@@ -66,7 +67,7 @@ To toggle from a keybinding, add this to `~/.config/hypr/bindings.lua`:
 o.bind("SUPER + ALT + V", "Toggle Proton VPN", "omarchy-shell io.github.orcawhisperer.protonvpn toggleVpn")
 ```
 
-The widget also answers `open`, `close`, `connect`, `connectCountry <CC>`, `showCities <CC>`, `disconnect`, `refresh` and `status` through `omarchy-shell io.github.orcawhisperer.protonvpn <method>`.
+The widget also answers `open`, `close`, `connect`, `connectCountry <CC>`, `showCities <CC>`, `toggleFavorite <CC>`, `favorites`, `disconnect`, `refresh` and `status` through `omarchy-shell io.github.orcawhisperer.protonvpn <method>`.
 
 ## Omarchy DNS and NetShield
 
